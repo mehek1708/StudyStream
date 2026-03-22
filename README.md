@@ -1,4 +1,4 @@
-**_# StudyStream_**
+**_#StudyStream_**
 
 
 **The smartest way to turn watch-time into study-time.**
