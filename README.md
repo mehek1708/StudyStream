@@ -1,5 +1,6 @@
-_# StudyStream
-_
+_# StudyStream_
+
+
 **The smartest way to turn watch-time into study-time.**
 
 StudyStream helps students turn long videos and recordings into usable study material. Paste a YouTube link or upload an audio/video file to generate a transcript, summary, and study notes.
