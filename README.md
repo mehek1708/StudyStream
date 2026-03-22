@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# StudyStream
 
-## Getting Started
+**The smartest way to turn watch-time into study-time.**
 
-First, run the development server:
+StudyStream helps students turn long videos and recordings into usable study material. Paste a YouTube link or upload an audio/video file to generate a transcript, summary, and study notes.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Generate transcripts from YouTube links
+- Upload audio or video files for transcription
+- Generate AI-powered summaries
+- Generate AI-powered study notes
+- Copy transcript, summary, and notes with one click
+- Download transcript, summary, and notes as `.txt` or `.pdf`
+- Scrollable result boxes for long content
+- Clean, student-friendly UI
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech Used
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- Flask
+- FFmpeg
+- NVIDIA Whisper / Riva
+- NVIDIA Gemma
 
-## Learn More
+## How It Works
 
-To learn more about Next.js, take a look at the following resources:
+### YouTube links
+1. User pastes a YouTube link
+2. The app fetches the transcript
+3. The transcript is cleaned
+4. Gemma generates the summary and study notes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Uploaded files
+1. User uploads an audio or video file
+2. The Flask whisper-service converts the file to a Whisper-friendly WAV format
+3. NVIDIA Whisper transcribes the file
+4. The transcript is sent back to the app
+5. Gemma generates the summary and study notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Status
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+StudyStream currently supports:
+- YouTube transcript generation
+- Uploaded file transcription
+- AI summaries
+- AI study notes
+- Copy and download actions
