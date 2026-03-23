@@ -261,10 +261,13 @@ export async function POST(request: NextRequest) {
       const whisperFormData = new FormData();
       whisperFormData.append("file", uploadedFile);
 
-      const whisperResponse = await fetch("http://127.0.0.1:5001/transcribe", {
-        method: "POST",
-        body: whisperFormData,
-      });
+      const whisperResponse = await fetch(
+        "https://studystream-whisper-service.onrender.com/transcribe",
+        {
+          method: "POST",
+          body: whisperFormData,
+        }
+      );
 
       const whisperData = await whisperResponse.json();
 
