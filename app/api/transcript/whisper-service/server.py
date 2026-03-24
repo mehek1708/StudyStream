@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -109,35 +110,41 @@ def convert_to_wav(input_path: str) -> str:
     return output_path
 
 
-@app.route("/transcribe", methods=["POST"])
-def transcribe():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded."}), 400
+def download_youtube_audio(youtube_url: str) -> tuple[str, str]:
+    yt_dlp_path = shutil.which("yt-dlp") or "yt-dlp"
+    temp_dir = tempfile.mkdtemp()
+    output_template = os.path.join(temp_dir, "source.%(ext)s")
 
-    uploaded_file = request.files["file"]
+    command = [
+        yt_dlp_path,
+        "-f",
+        "bestaudio/best",
+        "-o",
+        output_template,
+        youtube_url,
+    ]
 
-    if uploaded_file.filename == "":
-        return jsonify({"error": "Empty file."}), 400
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
 
-    api_key = os.getenv("WHISPER_API")
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "yt-dlp download failed.")
 
-    if not api_key:
-        return jsonify({"error": "WHISPER_API is missing in whisper-service/.env"}), 500
+    files = list(Path(temp_dir).glob("source.*"))
+    if not files:
+        raise RuntimeError("Could not download YouTube audio.")
 
-    if not CLIENT_SCRIPT.exists():
-        return jsonify({"error": "NVIDIA transcription client script was not found."}), 500
+    return str(files[0]), temp_dir
 
-    suffix = Path(uploaded_file.filename).suffix or ".tmp"
-    temp_path = None
-    wav_path = None
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-        uploaded_file.save(temp_file.name)
-        temp_path = temp_file.name
+def transcribe_audio_file(audio_path: str, api_key: str) -> str:
+    wav_path = convert_to_wav(audio_path)
 
     try:
-        wav_path = convert_to_wav(temp_path)
-
         command = [
             "python3",
             str(CLIENT_SCRIPT),
@@ -167,22 +174,76 @@ def transcribe():
         combined_output = f"{result.stdout}\n{result.stderr}".strip()
 
         if result.returncode != 0:
-            return jsonify(
-                {
-                    "error": "NVIDIA Whisper transcription failed.",
-                    "details": combined_output,
-                }
-            ), 500
+            raise RuntimeError(combined_output or "NVIDIA Whisper transcription failed.")
 
         transcript = extract_transcript(result.stdout)
 
         if not transcript:
+            raise RuntimeError("No transcript was returned.")
+
+        return transcript
+    finally:
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return jsonify({"ok": True}), 200
+
+
+@app.route("/transcribe", methods=["POST"])
+def transcribe():
+    api_key = os.getenv("WHISPER_API")
+
+    if not api_key:
+        return jsonify({"error": "WHISPER_API is missing in whisper-service/.env"}), 500
+
+    if not CLIENT_SCRIPT.exists():
+        return jsonify({"error": "NVIDIA transcription client script was not found."}), 500
+
+    temp_paths: list[str] = []
+    temp_dirs: list[str] = []
+
+    try:
+        youtube_link = None
+
+        if request.is_json:
+            body = request.get_json(silent=True) or {}
+            youtube_link = body.get("youtubeLink")
+        else:
+            youtube_link = request.form.get("youtubeLink")
+
+        if youtube_link:
+            source_path, temp_dir = download_youtube_audio(youtube_link)
+            temp_paths.append(source_path)
+            temp_dirs.append(temp_dir)
+
+            transcript = transcribe_audio_file(source_path, api_key)
+
             return jsonify(
                 {
-                    "error": "Oops! We can’t generate this right now 😔 Please upload a relevant audio or video file first.",
-                    "details": combined_output,
+                    "success": True,
+                    "transcript": transcript,
                 }
-            ), 500
+            )
+
+        if "file" not in request.files:
+            return jsonify({"error": "No file uploaded."}), 400
+
+        uploaded_file = request.files["file"]
+
+        if uploaded_file.filename == "":
+            return jsonify({"error": "Empty file."}), 400
+
+        suffix = Path(uploaded_file.filename).suffix or ".tmp"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            uploaded_file.save(temp_file.name)
+            source_path = temp_file.name
+            temp_paths.append(source_path)
+
+        transcript = transcribe_audio_file(source_path, api_key)
 
         return jsonify(
             {
@@ -190,15 +251,19 @@ def transcribe():
                 "transcript": transcript,
             }
         )
+
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Transcription timed out."}), 500
     except Exception as error:
         return jsonify({"error": str(error)}), 500
     finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
-        if wav_path and os.path.exists(wav_path):
-            os.remove(wav_path)
+        for path in temp_paths:
+            if os.path.exists(path):
+                os.remove(path)
+
+        for temp_dir in temp_dirs:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

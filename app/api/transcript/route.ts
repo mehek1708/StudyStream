@@ -324,36 +324,71 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let transcriptItems;
+    let transcript = "";
 
     try {
-      transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+      const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+
+      if (!transcriptItems.length) {
+        throw new Error("No YouTube transcript items found.");
+      }
+
+      transcript = transcriptItems
+        .map((item) => item.text)
+        .join(" ")
+        .replace(/\[[^\]]+\]/gi, " ")
+        .replace(/\([^)]+\)/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
     } catch (error) {
-      console.error("YouTube transcript fetch failed:", error);
+      console.error(
+        "YouTube transcript fetch failed, falling back to Whisper:",
+        error
+      );
 
-      return NextResponse.json(
+      const fallbackResponse = await fetch(
+        "https://studystream-whisper-service.onrender.com/transcribe",
         {
-          error:
-            "Could not fetch the YouTube transcript. The video may not have captions available.",
-        },
-        { status: 500 }
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ youtubeLink }),
+        }
       );
-    }
 
-    if (!transcriptItems.length) {
-      return NextResponse.json(
-        { error: "No transcript was found for this video." },
-        { status: 404 }
-      );
-    }
+      const fallbackData = await fallbackResponse.json();
 
-    const transcript = transcriptItems
-      .map((item) => item.text)
-      .join(" ")
-      .replace(/\[[^\]]+\]/gi, " ")
-      .replace(/\([^)]+\)/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+      if (!fallbackResponse.ok) {
+        return NextResponse.json(
+          {
+            error:
+              fallbackData?.error ||
+              "Could not fetch the YouTube transcript or generate a fallback transcript.",
+          },
+          { status: 500 }
+        );
+      }
+
+      transcript =
+        typeof fallbackData?.transcript === "string"
+          ? fallbackData.transcript
+              .replace(/\[[^\]]+\]/gi, " ")
+              .replace(/\([^)]+\)/gi, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+          : "";
+
+      if (!transcript) {
+        return NextResponse.json(
+          {
+            error:
+              "Could not fetch the YouTube transcript or generate a fallback transcript.",
+          },
+          { status: 500 }
+        );
+      }
+    }
 
     const cleanedTranscript = cleanTranscriptForStudyContent(transcript);
     const studySource = cleanedTranscript || transcript;
