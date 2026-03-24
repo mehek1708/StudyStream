@@ -40,6 +40,9 @@ BASE_DIR = Path(__file__).resolve().parent
 CLIENT_SCRIPT = BASE_DIR / "python-clients" / "scripts" / "asr" / "transcribe_file_offline.py"
 FUNCTION_ID = "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"
 
+# Use static FFmpeg binary on platforms where ffmpeg isn't installed (e.g. Render free tier)
+import static_ffmpeg
+static_ffmpeg.add_paths()
 
 # ---------------------------------------------------------------------------
 # YouTube caption helpers
