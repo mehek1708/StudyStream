@@ -9,6 +9,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 
+import static_ffmpeg
+static_ffmpeg.add_paths()
+
 app = Flask(__name__)
 CORS(app)
 
@@ -40,9 +43,6 @@ BASE_DIR = Path(__file__).resolve().parent
 CLIENT_SCRIPT = BASE_DIR / "python-clients" / "scripts" / "asr" / "transcribe_file_offline.py"
 FUNCTION_ID = "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"
 
-# Use static FFmpeg binary on platforms where ffmpeg isn't installed (e.g. Render free tier)
-import static_ffmpeg
-static_ffmpeg.add_paths()
 
 # ---------------------------------------------------------------------------
 # YouTube caption helpers
@@ -295,12 +295,23 @@ def transcribe():
                     "source": "youtube_captions",
                 })
 
-            # Step 2: No captions found — fall back to Whisper
-            source_path, temp_dir = download_youtube_audio(youtube_link)
-            temp_paths.append(source_path)
-            temp_dirs.append(temp_dir)
-
-            transcript = transcribe_audio_file(source_path, api_key)
+            # Step 2: No captions found — try Whisper fallback via yt-dlp
+            try:
+                source_path, temp_dir = download_youtube_audio(youtube_link)
+                temp_paths.append(source_path)
+                temp_dirs.append(temp_dir)
+                transcript = transcribe_audio_file(source_path, api_key)
+            except RuntimeError as e:
+                error_msg = str(e).lower()
+                if "sign in" in error_msg or "bot" in error_msg or "cookies" in error_msg:
+                    return jsonify({
+                        "error": (
+                            "This video doesn't have captions and its audio couldn't be "
+                            "downloaded automatically. Please download the video or audio "
+                            "file manually and upload it instead."
+                        )
+                    }), 500
+                raise
 
             return jsonify({
                 "success": True,
