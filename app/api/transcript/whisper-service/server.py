@@ -6,8 +6,11 @@ import tempfile
 from pathlib import Path
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 
 app = Flask(__name__)
+CORS(app)
 
 
 def load_env_file():
@@ -37,6 +40,66 @@ BASE_DIR = Path(__file__).resolve().parent
 CLIENT_SCRIPT = BASE_DIR / "python-clients" / "scripts" / "asr" / "transcribe_file_offline.py"
 FUNCTION_ID = "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"
 
+
+# ---------------------------------------------------------------------------
+# YouTube caption helpers
+# ---------------------------------------------------------------------------
+
+def get_youtube_video_id(url: str) -> str | None:
+    """Extract video ID from various YouTube URL formats."""
+    patterns = [
+        r"(?:v=|\/)([0-9A-Za-z_-]{11})",
+        r"youtu\.be\/([0-9A-Za-z_-]{11})",
+        r"embed\/([0-9A-Za-z_-]{11})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def clean_youtube_transcript(entries: list) -> str:
+    """Join transcript entries and strip timestamps, music/sound cues."""
+    raw = " ".join(entry["text"] for entry in entries)
+    raw = re.sub(r"\[.*?\]", "", raw)       # [Music], [Applause], etc.
+    raw = re.sub(r"\(.*?\)", "", raw)       # (music), (laughter), etc.
+    raw = re.sub(r"♪[^♪]*♪", "", raw)      # ♪ music notes ♪
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw
+
+
+def fetch_youtube_transcript(youtube_url: str) -> str | None:
+    """
+    Try to fetch existing YouTube captions.
+    Returns the cleaned transcript string, or None if unavailable.
+    """
+    video_id = get_youtube_video_id(youtube_url)
+    if not video_id:
+        return None
+
+    try:
+        # Try English first, then fall back to any available language
+        try:
+            entries = YouTubeTranscriptApi.get_transcript(video_id, languages=["en"])
+        except Exception:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            transcript = transcript_list.find_transcript(
+                [t.language_code for t in transcript_list]
+            )
+            entries = transcript.fetch()
+
+        return clean_youtube_transcript(entries)
+
+    except (NoTranscriptFound, TranscriptsDisabled):
+        return None  # No captions available — caller will fall back to Whisper
+    except Exception:
+        return None  # Any other error — fall back to Whisper
+
+
+# ---------------------------------------------------------------------------
+# Whisper / audio helpers
+# ---------------------------------------------------------------------------
 
 def extract_transcript(output: str) -> str:
     cleaned_output = re.sub(r"\s+", " ", output).strip()
@@ -187,6 +250,10 @@ def transcribe_audio_file(audio_path: str, api_key: str) -> str:
             os.remove(wav_path)
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.route("/healthz", methods=["GET"])
 def healthz():
     return jsonify({"ok": True}), 200
@@ -215,19 +282,30 @@ def transcribe():
             youtube_link = request.form.get("youtubeLink")
 
         if youtube_link:
+            # Step 1: Try fetching existing YouTube captions first (fast, free)
+            transcript = fetch_youtube_transcript(youtube_link)
+
+            if transcript:
+                return jsonify({
+                    "success": True,
+                    "transcript": transcript,
+                    "source": "youtube_captions",
+                })
+
+            # Step 2: No captions found — fall back to Whisper
             source_path, temp_dir = download_youtube_audio(youtube_link)
             temp_paths.append(source_path)
             temp_dirs.append(temp_dir)
 
             transcript = transcribe_audio_file(source_path, api_key)
 
-            return jsonify(
-                {
-                    "success": True,
-                    "transcript": transcript,
-                }
-            )
+            return jsonify({
+                "success": True,
+                "transcript": transcript,
+                "source": "whisper",
+            })
 
+        # Uploaded file — always use Whisper
         if "file" not in request.files:
             return jsonify({"error": "No file uploaded."}), 400
 
@@ -245,12 +323,11 @@ def transcribe():
 
         transcript = transcribe_audio_file(source_path, api_key)
 
-        return jsonify(
-            {
-                "success": True,
-                "transcript": transcript,
-            }
-        )
+        return jsonify({
+            "success": True,
+            "transcript": transcript,
+            "source": "whisper",
+        })
 
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Transcription timed out."}), 500

@@ -1,4 +1,5 @@
 flask
+flask-cors
 python-dotenv
 grpcio==1.67.1
 grpcio-tools==1.67.1
@@ -6,3 +7,6 @@ protobuf==5.29.6
 websockets==15.0.1
 setuptools==78.1.1
 yt-dlp
+youtube-transcript-api
+flask-cors
+youtube-transcript-api
