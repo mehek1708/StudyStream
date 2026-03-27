@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional, Tuple
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -48,7 +49,7 @@ FUNCTION_ID = "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"
 # YouTube caption helpers
 # ---------------------------------------------------------------------------
 
-def get_youtube_video_id(url: str) -> str | None:
+def get_youtube_video_id(url: str) -> Optional[str]:
     """Extract video ID from various YouTube URL formats."""
     patterns = [
         r"(?:v=|\/)([0-9A-Za-z_-]{11})",
@@ -72,7 +73,7 @@ def clean_youtube_transcript(entries: list) -> str:
     return raw
 
 
-def fetch_youtube_transcript(youtube_url: str) -> str | None:
+def fetch_youtube_transcript(youtube_url: str) -> Optional[str]:
     """
     Try to fetch existing YouTube captions.
     Returns the cleaned transcript string, or None if unavailable.
@@ -176,7 +177,7 @@ def convert_to_wav(input_path: str) -> str:
     return output_path
 
 
-def download_youtube_audio(youtube_url: str) -> tuple[str, str]:
+def download_youtube_audio(youtube_url: str) -> Tuple[str, str]:
     yt_dlp_path = shutil.which("yt-dlp") or "yt-dlp"
     temp_dir = tempfile.mkdtemp()
     output_template = os.path.join(temp_dir, "source.%(ext)s")
@@ -272,8 +273,8 @@ def transcribe():
     if not CLIENT_SCRIPT.exists():
         return jsonify({"error": "NVIDIA transcription client script was not found."}), 500
 
-    temp_paths: list[str] = []
-    temp_dirs: list[str] = []
+    temp_paths = []
+    temp_dirs = []
 
     try:
         youtube_link = None

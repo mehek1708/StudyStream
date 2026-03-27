@@ -327,7 +327,15 @@ export async function POST(request: NextRequest) {
     let transcript = "";
 
     try {
-      const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+      let transcriptItems = [];
+
+      try {
+        transcriptItems = await YoutubeTranscript.fetchTranscript(videoId, {
+          lang: "en",
+        });
+      } catch {
+        transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+      }
 
       if (!transcriptItems.length) {
         throw new Error("No YouTube transcript items found.");
